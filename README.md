@@ -2,6 +2,7 @@
 This is an implementation of Junyuan Xie, Ross Girshick, and Ali Farhadi. Unsupervised deep embedding for clustering analysis. ICML 2016 https://arxiv.org/pdf/1511.06335.pdf
 ## Pre-requsit
 * pyTorch 0.3+ with CUDA environment
+* torchVision
 * scikit-learn
 ## Usage
 python DEC.py
