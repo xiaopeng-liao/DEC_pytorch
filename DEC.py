@@ -1,8 +1,9 @@
 import os
 import time
 import torch
-import random
+import argparse
 import numpy as np
+import random
 import torch.nn as nn
 import torch.optim as optim
 import torchvision.datasets as dset
@@ -116,7 +117,7 @@ class DEC:
         self.alpha = alpha        
     @staticmethod
     def target_distribution(q):
-        weight = q ** 2 / q.sum(0)
+        weight = (q ** 2  ) / q.sum(0)
         #print('q',q)
         return Variable((weight.t() / weight.sum(1)).t().data, requires_grad=True)
     def logAccuracy(self,pred,label):
@@ -211,12 +212,20 @@ if __name__ == "__main__":
     root = './data'
     if not os.path.exists(root):
         os.mkdir(root)
-        #trans = transforms.Compose([transforms.Resize(32), transforms.ToTensor(), transforms.Normalize((0.5,), (1.0,))])
+    random.seed(7)
+
+    parser = argparse.ArgumentParser(description='train',
+                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument('--batch_size', default=100, type=int)
+    parser.add_argument('--pretrain_epochs', default=200, type=int)
+    parser.add_argument('--train_epochs', default=200, type=int)
+    args = parser.parse_args()
+
     trans = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5,), (1.0,))])
     # if not exist, download mnist dataset
     train_set = dset.MNIST(root=root, train=True, transform=trans, download=True)
     test_set = dset.MNIST(root=root, train=False, transform=trans, download=True)
-    batch_size = 100
+    batch_size = args.batch_size
     train_loader = torch.utils.data.DataLoader(
                      dataset=train_set,
                      batch_size=batch_size,
@@ -226,5 +235,6 @@ if __name__ == "__main__":
                     batch_size=batch_size,
                     shuffle=False)
     dec = DEC(10,10)
-    dec.pretrain(train_loader, test_loader, 200)
-    dec.train(train_loader, test_loader, 200)
+    if args.pretrain_epochs > 0:
+        dec.pretrain(train_loader, test_loader, args.pretrain_epochs)
+    dec.train(train_loader, test_loader, args.train_epochs)
