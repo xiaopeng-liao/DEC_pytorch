@@ -83,6 +83,17 @@ class DEC_AE(nn.Module):
         q = q ** (self.alpha + 1.0) / 2.0
         q = (q.t() / torch.sum(q, 1)).t() #due to divison, we need to transpose q
         return q
+
+    def getDistance(self,x, clusterCenter,alpha=1.0):
+        """
+        it should minimize the distince to 
+         """
+        if not hasattr(self, 'clusterCenter'):
+            self.clusterCenter = nn.Parameter(torch.zeros(num_classes,num_classes))
+        xe = torch.unsqueeze(x,1).cuda() - clusterCenter.cuda()
+        # need to sum up all the point to the same center - axis 1
+        d = torch.sum(torch.mul(xe,xe), 2)
+        return d
         
     def forward(self,x):
         x = x.view(-1, 1*28*28)
@@ -97,7 +108,7 @@ class DEC_AE(nn.Module):
         x_e = x
         #if not in pretrain mode, we need encoder and t distribution output
         if self.pretrainMode == False:
-            return x, self.getTDistribution(x,self.clusterCenter)
+            return x, self.getTDistribution(x,self.clusterCenter), self.getDistance(x_e,self.clusterCenter),F.softmax(x_e,dim=1)
         ##### encoder is done, followed by decoder #####
         x = self.fc_d4(x)
         x = self.relu(x)
@@ -126,6 +137,19 @@ class DEC:
     @staticmethod
     def kld(q,p):
         return torch.sum(p*torch.log(p/q),dim=-1)
+    @staticmethod
+    def cross_entropy(q,p):
+        return torch.sum(torch.sum(p*torch.log(1/(q+1e-7)),dim=-1))
+    @staticmethod
+    def depict_q(p):
+        q1 = p / torch.sqrt(torch.sum(p,dim=0))
+        qik = q1 / q1.sum()
+        return qik
+    @staticmethod
+    def distincePerClusterCenter(dist):
+        totalDist =torch.sum(torch.sum(dist, dim=0)/(torch.max(dist) * dist.size(1)))
+        return totalDist
+
     def validateOnCompleteTestData(self,test_loader,model):
         model.eval()
         to_eval = np.array([model(d[0].cuda())[0].data.cpu().numpy() for i,d in enumerate(test_loader)])
@@ -156,7 +180,7 @@ class DEC:
                 optimizer.step()
                 x_eval = x.data.cpu().numpy()
                 label_eval = label.data.cpu().numpy()
-                running_loss += loss.data.cpu().numpy()[0]
+                running_loss += loss.data.cpu().numpy()
                 if i % 100 == 99:    # print every 100 mini-batches
                     print('[%d, %5d] loss: %.7f' %
                           (epoch + 1, i + 1, running_loss / 100))
@@ -169,7 +193,7 @@ class DEC:
                 best_acc = currentAcc
     def clustering(self,mbk,x,model):
         model.eval()
-        y_pred_ae,_ = model(x)
+        y_pred_ae,_,_,_ = model(x)
         y_pred_ae = y_pred_ae.data.cpu().numpy()
         y_pred = mbk.partial_fit(y_pred_ae) #seems we can only get a centre from batch
         self.cluster_centers = mbk.cluster_centers_ #keep the cluster centers
@@ -199,11 +223,11 @@ class DEC:
                 else:
                     model.train()
                     #now we start training with acquired cluster center
-                    feature_pred,q = model(x)
-                    #get target distribution
-                    p = self.target_distribution(q)
-                    #print('q',q,'p',p)
-                    loss = self.kld(q,p).mean()
+                    feature_pred,q,dist,clssfied = model(x)
+                    d = self.distincePerClusterCenter(dist)
+                    qik = self.depict_q(clssfied)
+                    loss1 = self.cross_entropy(clssfied,qik)
+                    loss = d + loss1
                     loss.backward()
                     optimizer.step()
             currentAcc = self.validateOnCompleteTestData(test_loader,model)    
